@@ -63,7 +63,7 @@ Example Configuration in Web.Config
 The exact style of web.config depends on your chosen strategy. Original AD is the simplest:
 
 ```
-<!-- AD B2C Configuration -->
+<!-- AD Configuration -->
 <add key="ida:AadInstance" value="https://login.microsoftonline.com/" />
 <add key="ida:ClientId" value="[YourAppGuidFromPortal]" />
 ```
