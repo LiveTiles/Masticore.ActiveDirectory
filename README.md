@@ -1,6 +1,21 @@
 # Masticore.ActiveDirectory
 A library for integrating Azure Active Directory (Organization &amp; B2C) into an ASP.Net MVC Project.
 
+Installation
+-------------------------------------
+To use Masticore.ActiveDirectory, either download the code using git, build the "Masticore.ActiveDirectory" project, and include an assembly reference in your project to the "Masticore.ActiveDirectory.dll" assembly.
+
+OR
+
+Install the package from NuGet (https://www.nuget.org/packages/Masticore.ActiveDirectory/) using the following command in the package manager console in Visual Studio:
+
+```
+Install-Package Masticore.ActiveDirectory
+```
+
+Summary
+-------------------------------------
+
 This library is a refined version of the two boilerplate project configurations provided by Visual Studio 2015, intended to enable easy configuration via dependency injection and supporting various fixes to Azure AD's cookie management.
 - A basic interface for describing signup, signin, and signout for applications
 - An implementation of this interface for [Azure Active Directory](https://docs.microsoft.com/en-us/azure/active-directory/)
