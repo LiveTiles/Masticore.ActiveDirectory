@@ -7,10 +7,17 @@ namespace Masticore.ActiveDirectory
 {
     /// <summary>
     /// Write Cookies directly to the System.Web cookie collection
-    /// From http://katanaproject.codeplex.com/wikipage?title=System.Web%20response%20cookie%20integration%20issues&referringTitle=Documentation
     /// </summary>
     public class SystemWebCookieManager : ICookieManager
     {
+        // from: http://katanaproject.codeplex.com/wikipage?title=System.Web%20response%20cookie%20integration%20issues&referringTitle=Documentation
+
+        /// <summary>
+        /// Reads the web context to get a cookier by name
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="key"></param>
+        /// <returns></returns>
         public string GetRequestCookie(IOwinContext context, string key)
         {
             if (context == null)
@@ -23,6 +30,13 @@ namespace Masticore.ActiveDirectory
             return cookie == null ? null : cookie.Value;
         }
 
+        /// <summary>
+        /// Users the context to append a cookie by name, with some error checking
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="key"></param>
+        /// <param name="value"></param>
+        /// <param name="options"></param>
         public void AppendResponseCookie(IOwinContext context, string key, string value, CookieOptions options)
         {
             if (context == null)
@@ -65,6 +79,12 @@ namespace Masticore.ActiveDirectory
             webContext.Response.AppendCookie(cookie);
         }
 
+        /// <summary>
+        /// Deletes a cookie from the context, with some error checking
+        /// </summary>
+        /// <param name="context"></param>
+        /// <param name="key"></param>
+        /// <param name="options"></param>
         public void DeleteCookie(IOwinContext context, string key, CookieOptions options)
         {
             if (context == null)

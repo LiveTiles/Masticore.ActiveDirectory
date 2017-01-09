@@ -15,8 +15,20 @@ namespace Masticore.ActiveDirectory
     /// </summary>
     public class OrgStrategy : IActiveDirectoryStrategy
     {
+        #region App Settings
+
+        /// <summary>
+        /// GUID for the application ID
+        /// This is set in the AD portal
+        /// </summary>
         public static readonly string ClientId = ActiveDirectoryAppSettings.ClientId;
+
+        /// <summary>
+        /// URL for the signin server, EG: https://login.microsoftonline.com/
+        /// </summary>
         public static readonly string AADInstance = ActiveDirectoryAppSettings.AADInstance + "common";
+
+        #endregion
 
         /// <summary>
         /// Configures anti-forgery validatation to use the OID of the current user

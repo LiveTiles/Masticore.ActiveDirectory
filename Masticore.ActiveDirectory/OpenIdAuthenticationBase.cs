@@ -15,7 +15,12 @@ namespace Masticore.ActiveDirectory
     /// </summary>
     public static class OpenIdConnectAuthenticationPatchedMiddlewareExtension
     {
-        
+        /// <summary>
+        /// Applies OpenIdConnectAuthenticationPatchedMiddleware to the IAppBuilder
+        /// </summary>
+        /// <param name="app"></param>
+        /// <param name="openIdConnectOptions"></param>
+        /// <returns></returns>
         public static Owin.IAppBuilder UseOpenIdConnectAuthenticationPatched(this Owin.IAppBuilder app, Microsoft.Owin.Security.OpenIdConnect.OpenIdConnectAuthenticationOptions openIdConnectOptions)
         {
             if (app == null)
@@ -41,29 +46,52 @@ namespace Masticore.ActiveDirectory
     {
         private readonly Microsoft.Owin.Logging.ILogger _logger;
 
+        /// <summary>
+        /// Constructor taking full context for this object
+        /// </summary>
+        /// <param name="next"></param>
+        /// <param name="app"></param>
+        /// <param name="options"></param>
         public OpenIdConnectAuthenticationPatchedMiddleware(Microsoft.Owin.OwinMiddleware next, Owin.IAppBuilder app, Microsoft.Owin.Security.OpenIdConnect.OpenIdConnectAuthenticationOptions options)
                 : base(next, app, options)
         {
             this._logger = Microsoft.Owin.Logging.AppBuilderLoggerExtensions.CreateLogger<OpenIdConnectAuthenticationPatchedMiddleware>(app);
         }
 
+        /// <summary>
+        /// Creates an authentication handle
+        /// </summary>
+        /// <returns></returns>
         protected override Microsoft.Owin.Security.Infrastructure.AuthenticationHandler<OpenIdConnectAuthenticationOptions> CreateHandler()
         {
             return new MasticoreOpenIdConnectAuthenticationHandler(_logger);
         }
 
+        /// <summary>
+        /// Class for the patched OpenIdConnect handler
+        /// </summary>
         public class MasticoreOpenIdConnectAuthenticationHandler : OpenIdConnectAuthenticationHandler
         {
+            /// <summary>
+            /// Constructor taking a logger
+            /// </summary>
+            /// <param name="logger"></param>
             public MasticoreOpenIdConnectAuthenticationHandler(Microsoft.Owin.Logging.ILogger logger)
                 : base(logger) { }
 
+            /// <summary>
+            /// Removes all the old nonces that are not current
+            /// This would normally not happen, causing the cookie to grow in size until it's too big
+            /// </summary>
+            /// <param name="message"></param>
+            /// <param name="nonce"></param>
             protected override void RememberNonce(OpenIdConnectMessage message, string nonce)
             {
                 var oldNonces = Request.Cookies.Where(kvp => kvp.Key.StartsWith(OpenIdConnectAuthenticationDefaults.CookiePrefix + "nonce"));
-               
-               
+
+
                 // if (oldNonces.Any())
-               if (oldNonces.Count() > 2)
+                if (oldNonces.Count() > 2)
                 {
                     System.Diagnostics.Trace.TraceInformation("Found excessive OpenId Authentication nonces.");
 

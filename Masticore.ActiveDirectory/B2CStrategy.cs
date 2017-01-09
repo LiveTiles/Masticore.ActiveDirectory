@@ -25,17 +25,52 @@ namespace Masticore.ActiveDirectory
     /// </summary>
     public class B2CStrategy : IActiveDirectoryStrategy
     {
-        // App config settings
+        #region App Settings
+
+        /// <summary>
+        /// GUID for the application
+        /// </summary>
         public static readonly string ClientId = ActiveDirectoryAppSettings.ClientId;
+
+        /// <summary>
+        /// URL for the AAD provider, normally this is https://login.microsoftonline.com/
+        /// </summary>
         public static readonly string AadInstance = ActiveDirectoryAppSettings.AADInstance;
-        public const string OAuthForAadInstance = "{0}/v2.0/.well-known/openid-configuration?p={1}";
+
+        /// <summary>
+        /// Domain for AD directory, generally this is based on the directory's name
+        /// EG: [YourAdDirectoryName].onmicrosoft.com
+        /// </summary>
         public static readonly string Domain = ActiveDirectoryAppSettings.Domain;
+
+        /// <summary>
+        /// The URI to which AD will redirect after authentication
+        /// This is must match what is defined in the B2C portal
+        /// </summary>
         public static readonly string RedirectUri = ActiveDirectoryAppSettings.RedirectUri;
 
         // B2C policy identifiers
+        /// <summary>
+        /// Identifier for sign-in policy, created in B2C portal
+        /// </summary>
         public static readonly string SignInPolicyId = ActiveDirectoryAppSettings.SignInPolicyId;
+
+        /// <summary>
+        /// Identifier for the sign-up policy, created in B2C portal
+        /// </summary>
         public static readonly string SignUpPolicyId = ActiveDirectoryAppSettings.SignUpPolicyId;
+
+        /// <summary>
+        /// Identifier for the profile policy (editing user's own settings), created in B2C Portal
+        /// </summary>
         public static readonly string ProfilePolicyId = ActiveDirectoryAppSettings.UserProfilePolicyId;
+
+        #endregion
+
+        /// <summary>
+        /// URL template for OAuth
+        /// </summary>
+        public const string OAuthForAadInstance = "{0}/v2.0/.well-known/openid-configuration?p={1}";
 
         /// <summary>
         /// Called when authentication process fails
