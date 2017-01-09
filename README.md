@@ -71,11 +71,10 @@ The exact style of web.config depends on your chosen strategy. Original AD is th
 B2C requires dramatically more information to work correctly. Example B2C Configuration:
 ```
 <!-- AD B2C Configuration -->
-<add key="ida:RedirectUri" value="https://localhost:44343/" />
 <add key="ida:AadInstance" value="https://login.microsoftonline.com/" />
-<!-- QA AD Settings -->
-<add key="ida:Domain" value="[YourAdName].onmicrosoft.com" />
 <add key="ida:ClientId" value="[YourAppGuidFromPortal]" />
+<add key="ida:RedirectUri" value="https://localhost:44343/" />
+<add key="ida:Domain" value="[YourAdName].onmicrosoft.com" />
 <add key="ida:SignUpPolicyId" value="B2C_1_ltc-teams-signup-policy" />
 <add key="ida:SignInPolicyId" value="B2C_1_ltc-teams-signin" />
 <add key="ida:UserProfilePolicyId" value="B2C_1_ltc-teams-profile" />
