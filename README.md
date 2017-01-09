@@ -8,8 +8,8 @@ This library is a refined version of the two boilerplate project configurations 
 
 When using this system, the developer need only:
 
-1) Register with their DI system one of the implementations of IActiveDirectoryStrategy
-2) Consume the IActiveDirectoryStrategy interface from the AccountController (or analogous controller) of their ASP.Net MVC project
+1. Register with their DI system one of the implementations of IActiveDirectoryStrategy
+2. Consume the IActiveDirectoryStrategy interface from the AccountController (or analogous controller) of their ASP.Net MVC project
 
 Example AccountController
 -------------------------------------
