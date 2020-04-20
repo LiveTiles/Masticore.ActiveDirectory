@@ -1,10 +1,6 @@
-﻿using Microsoft.IdentityModel.Protocols;
+﻿using Microsoft.IdentityModel.Protocols.OpenIdConnect;
 using Microsoft.Owin.Security.OpenIdConnect;
-using System;
-using System.Collections.Generic;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace Masticore.ActiveDirectory
 {
@@ -16,11 +12,11 @@ namespace Masticore.ActiveDirectory
     public static class OpenIdConnectAuthenticationPatchedMiddlewareExtension
     {
         /// <summary>
-        /// Applies OpenIdConnectAuthenticationPatchedMiddleware to the IAppBuilder
+        /// Sets the "app.Use" for the OpenId implemementatio
         /// </summary>
-        /// <param name="app"></param>
-        /// <param name="openIdConnectOptions"></param>
-        /// <returns></returns>
+        /// <param name="app">The IAppBuilder implementation</param>
+        /// <param name="openIdConnectOptions">The OpenIdConnectAuthenticationOptions such as ClientId, etc. </param>
+        /// <returns>The IAppBuilder</returns>
         public static Owin.IAppBuilder UseOpenIdConnectAuthenticationPatched(this Owin.IAppBuilder app, Microsoft.Owin.Security.OpenIdConnect.OpenIdConnectAuthenticationOptions openIdConnectOptions)
         {
             if (app == null)
@@ -31,8 +27,8 @@ namespace Masticore.ActiveDirectory
             {
                 throw new System.ArgumentNullException("openIdConnectOptions");
             }
-            System.Type type = typeof(OpenIdConnectAuthenticationPatchedMiddleware);
-            object[] objArray = new object[] { app, openIdConnectOptions };
+            var type = typeof(OpenIdConnectAuthenticationPatchedMiddleware);
+            var objArray = new object[] { app, openIdConnectOptions };
             return app.Use(type, objArray);
         }
     }
@@ -46,12 +42,6 @@ namespace Masticore.ActiveDirectory
     {
         private readonly Microsoft.Owin.Logging.ILogger _logger;
 
-        /// <summary>
-        /// Constructor taking full context for this object
-        /// </summary>
-        /// <param name="next"></param>
-        /// <param name="app"></param>
-        /// <param name="options"></param>
         public OpenIdConnectAuthenticationPatchedMiddleware(Microsoft.Owin.OwinMiddleware next, Owin.IAppBuilder app, Microsoft.Owin.Security.OpenIdConnect.OpenIdConnectAuthenticationOptions options)
                 : base(next, app, options)
         {
@@ -59,48 +49,36 @@ namespace Masticore.ActiveDirectory
         }
 
         /// <summary>
-        /// Creates an authentication handle
+        /// Override the base implementation of Infrastructure.AuthenticationHandler
         /// </summary>
-        /// <returns></returns>
+        /// <returns>OpenIdConnectAuthenticationHandler</returns>
         protected override Microsoft.Owin.Security.Infrastructure.AuthenticationHandler<OpenIdConnectAuthenticationOptions> CreateHandler()
         {
             return new MasticoreOpenIdConnectAuthenticationHandler(_logger);
         }
 
-        /// <summary>
-        /// Class for the patched OpenIdConnect handler
-        /// </summary>
         public class MasticoreOpenIdConnectAuthenticationHandler : OpenIdConnectAuthenticationHandler
         {
-            /// <summary>
-            /// Constructor taking a logger
-            /// </summary>
-            /// <param name="logger"></param>
             public MasticoreOpenIdConnectAuthenticationHandler(Microsoft.Owin.Logging.ILogger logger)
                 : base(logger) { }
 
             /// <summary>
-            /// Removes all the old nonces that are not current
-            /// This would normally not happen, causing the cookie to grow in size until it's too big
+            /// Override the mechanism that saves the Owin Cookie (issue where the nonce is repeatly set, overflowing the request handler)
             /// </summary>
-            /// <param name="message"></param>
-            /// <param name="nonce"></param>
+            /// <param name="message">The OpenId Request message</param>
+            /// <param name="nonce">The nonce value, typically a secure cookie</param>
             protected override void RememberNonce(OpenIdConnectMessage message, string nonce)
             {
                 var oldNonces = Request.Cookies.Where(kvp => kvp.Key.StartsWith(OpenIdConnectAuthenticationDefaults.CookiePrefix + "nonce"));
-
-
-                // if (oldNonces.Any())
-                if (oldNonces.Count() > 2)
+               
+                if (oldNonces.Any())
                 {
-                    System.Diagnostics.Trace.TraceInformation("Found excessive OpenId Authentication nonces.");
-
-                    Microsoft.Owin.CookieOptions cookieOptions = new Microsoft.Owin.CookieOptions
+                    var cookieOptions = new Microsoft.Owin.CookieOptions
                     {
                         HttpOnly = true,
                         Secure = Request.IsSecure
                     };
-                    foreach (KeyValuePair<string, string> oldNonce in oldNonces)
+                    foreach (var oldNonce in oldNonces)
                     {
                         Response.Cookies.Delete(oldNonce.Key, cookieOptions);
                     }

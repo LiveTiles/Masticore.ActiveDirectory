@@ -1,12 +1,11 @@
-﻿using Microsoft.IdentityModel.Protocols;
+﻿using Microsoft.IdentityModel.Protocols.OpenIdConnect;
+using Microsoft.IdentityModel.Tokens;
 using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.Cookies;
 using Microsoft.Owin.Security.Notifications;
 using Microsoft.Owin.Security.OpenIdConnect;
 using Owin;
 using System;
-using System.Collections.Generic;
-using System.IdentityModel.Tokens;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Web;
@@ -23,54 +22,114 @@ namespace Masticore.ActiveDirectory
     /// B2CStrategy strategy = new B2CStrategy();
     /// strategy.SignOut(this, "[Other App URL]");
     /// </summary>
-    public class B2CStrategy : IActiveDirectoryStrategy
+    public class B2CStrategy : IAuthStrategy
     {
-        #region App Settings
+        public const string OAuthForAadInstance = "{0}/v2.0/.well-known/openid-configuration?p={1}";
 
-        /// <summary>
-        /// GUID for the application
-        /// </summary>
-        public static readonly string ClientId = ActiveDirectoryAppSettings.ClientId;
-
-        /// <summary>
-        /// URL for the AAD provider, normally this is https://login.microsoftonline.com/
-        /// </summary>
         public static readonly string AadInstance = ActiveDirectoryAppSettings.AADInstance;
 
-        /// <summary>
-        /// Domain for AD directory, generally this is based on the directory's name
-        /// EG: [YourAdDirectoryName].onmicrosoft.com
-        /// </summary>
-        public static readonly string Domain = ActiveDirectoryAppSettings.Domain;
-
-        /// <summary>
-        /// The URI to which AD will redirect after authentication
-        /// This is must match what is defined in the B2C portal
-        /// </summary>
         public static readonly string RedirectUri = ActiveDirectoryAppSettings.RedirectUri;
 
-        // B2C policy identifiers
+        // App config settings
+        public string ClientId { get; set; } = ActiveDirectoryAppSettings.ClientId;
+
+        public string ClientSecret { get; set; } = ActiveDirectoryAppSettings.ClientSecret;
+        public string PostLogoutUrl { get; set; }
+        public string ProfilePolicyId { get; set; } = ActiveDirectoryAppSettings.UserProfilePolicyId;
+        public string RedirectUrl { get; set; }
+        public string SignInPolicyId { get; set; } = ActiveDirectoryAppSettings.SignInPolicyId;
+        public string SignUpPolicyId { get; set; } = ActiveDirectoryAppSettings.SignUpPolicyId;
+        public string Domain { get; set; } = ActiveDirectoryAppSettings.Domain;
         /// <summary>
-        /// Identifier for sign-in policy, created in B2C portal
+        /// Configures the current application to run the B2C connections
         /// </summary>
-        public static readonly string SignInPolicyId = ActiveDirectoryAppSettings.SignInPolicyId;
+        /// <param name="app"></param>
+        public virtual void Configure(IAppBuilder app)
+        {
+            ConfigureAntiForgeryValidation();
+
+            app.SetDefaultSignInAsAuthenticationType(CookieAuthenticationDefaults.AuthenticationType);
+
+            // This is theoretically safe as long as we are forcing HTTPS redirect
+            // (RequireSecureConnection Attribute + HTTPS URL Rewrite)
+            // MSDN warning for "Always" setting: https://msdn.microsoft.com/en-us/library/microsoft.owin.security.cookies.cookiesecureoption(v=vs.113).aspx
+            // HTTPS rewrite in web.config example, use this in the production app: https://gist.github.com/eralston/e487ef97edcad4881401
+            // Issues on Stack Overflow: https://stackoverflow.com/questions/27525573/azure-openid-connect-via-owin-middleware-resulting-in-infinite-redirect-loop
+            // Use the SystemWebCookieManager as defined by this workaround by Microsoft: http://katanaproject.codeplex.com/wikipage?title=System.Web%20response%20cookie%20integration%20issues&referringTitle=Documentation
+            app.UseCookieAuthentication(new CookieAuthenticationOptions() { CookieSecure = CookieSecureOption.Always, CookieManager = new SameSiteCookieManager() });
+
+            ConfiguratePolicies(app);
+
+            app.Use((context, next) =>
+            {
+                context.SetAuthenticationType(AuthenticationType.ActiveDirectoryB2C);
+                return next();
+            });
+        }
+
+        public Task<string> GetAuthenticationTokenAsync()
+        {
+            throw new NotImplementedException();
+        }
 
         /// <summary>
-        /// Identifier for the sign-up policy, created in B2C portal
+        /// Runs the Profile action, taking the current user to the page for their profile in AD B2C
         /// </summary>
-        public static readonly string SignUpPolicyId = ActiveDirectoryAppSettings.SignUpPolicyId;
+        /// <param name="controller"></param>
+        /// <param name="redirectUri"></param>
+        public virtual void Profile(Controller controller, string redirectUri)
+        {
+            var settings = AuthenticationPolicy.GetAuthenticationPolicyInfo(controller.Request.Url.Authority);
+            var redirectUrl = settings?.RedirectUrl ?? redirectUri;
+
+            controller.HttpContext.GetOwinContext().Authentication.Challenge(
+                    new AuthenticationProperties() { RedirectUri = redirectUrl }, settings?.ProfilePolicy ?? ProfilePolicyId);
+        }
 
         /// <summary>
-        /// Identifier for the profile policy (editing user's own settings), created in B2C Portal
+        /// Signs in the current user
         /// </summary>
-        public static readonly string ProfilePolicyId = ActiveDirectoryAppSettings.UserProfilePolicyId;
+        /// <param name="controller"></param>
+        /// <param name="redirectUri"></param>
+        public virtual void SignIn(Controller controller, string redirectUri)
+        {
+            var settings = AuthenticationPolicy.GetAuthenticationPolicyInfo(controller.Request.Url.Authority);
+            var redirectUrl = settings?.RedirectUrl ?? redirectUri;
 
-        #endregion
+            // To execute a policy, you simply need to trigger an OWIN challenge.
+            // You can indicate which policy to use by specifying the policy id as the AuthenticationType
+            controller.HttpContext.GetOwinContext().Authentication.Challenge(
+                new AuthenticationProperties() { RedirectUri = redirectUrl }, settings?.SignInPolicy ?? SignInPolicyId);
+        }
 
         /// <summary>
-        /// URL template for OAuth
+        /// Logs the current user out of the system
         /// </summary>
-        public const string OAuthForAadInstance = "{0}/v2.0/.well-known/openid-configuration?p={1}";
+        /// <param name="controller"></param>
+        /// <param name="redirectUri"></param>
+        public virtual void SignOut(Controller controller, string redirectUri)
+        {
+            var authTypes = controller.HttpContext.GetOwinContext().Authentication.GetAuthenticationTypes();
+            controller.HttpContext.GetOwinContext().Authentication.SignOut(new AuthenticationProperties() { RedirectUri = redirectUri }, authTypes.Select(t => t.AuthenticationType).ToArray());
+            controller.Request.GetOwinContext().Authentication.GetAuthenticationTypes();
+        }
+
+        /// <summary>
+        /// Signs up the current user, creating a new account
+        /// NOTE: You must implement your own user models and permissions, this is just authentication
+        /// </summary>
+        /// <param name="controller"></param>
+        /// <param name="redirectUri"></param>
+        public virtual void SignUp(Controller controller, string redirectUri)
+        {
+            // To execute a policy, you simply need to trigger an OWIN challenge.
+            // You can indicate which policy to use by specifying the policy id as the AuthenticationType
+            var settings = AuthenticationPolicy.GetAuthenticationPolicyInfo(controller.Request.Url.Authority);
+            var redirectUrl = settings?.RedirectUrl ?? redirectUri;
+
+            controller.HttpContext.GetOwinContext().Authentication.Challenge(
+                new AuthenticationProperties() { RedirectUri = redirectUrl }, settings?.SignUpPolicy ?? SignUpPolicyId);
+        }
 
         /// <summary>
         /// Called when authentication process fails
@@ -94,6 +153,28 @@ namespace Masticore.ActiveDirectory
         }
 
         /// <summary>
+        /// Configures available policies in the system
+        /// </summary>
+        /// <param name="app"></param>
+        protected virtual void ConfiguratePolicies(IAppBuilder app)
+        {
+            UsePolicy(app, SignUpPolicyId);
+            UsePolicy(app, ProfilePolicyId);
+            // The last registered policy becomes the default policy
+            UsePolicy(app, SignInPolicyId);
+            
+        }
+
+        /// <summary>
+        /// Configures the strategy for AntiForgeryConfig - By default this is the OID claim for the user
+        /// </summary>
+        protected virtual void ConfigureAntiForgeryValidation()
+        {
+            AntiForgeryConfig.UniqueClaimTypeIdentifier = "http://schemas.microsoft.com/identity/claims/objectidentifier";
+            AntiForgeryConfig.AdditionalDataProvider = new ActiveDirectoryAntiForgeryProvider();
+        }
+
+        /// <summary>
         /// Creates a OpenIdConnectAuthenticationOptions for the given policy using the current web.config settings
         /// </summary>
         /// <param name="policy"></param>
@@ -101,12 +182,12 @@ namespace Masticore.ActiveDirectory
         protected virtual OpenIdConnectAuthenticationOptions CreateOptionsFromPolicy(string policy)
         {
             // Add to the Aad Instance the pre-defined OAuth 2
-            string metaAddressFormat = AadInstance + OAuthForAadInstance;
+            var metaAddressFormat = AadInstance + OAuthForAadInstance;
 
             // Force HTTPS redirect to prevent looping
-            var builder = new UriBuilder(RedirectUri);
+            var builder = new UriBuilder(RedirectUrl ?? RedirectUri);
             builder.Scheme = "https";
-            string httpsRedirectUri = builder.ToString();
+            var httpsRedirectUri = builder.ToString();
 
             // Create and return auth options
             return new OpenIdConnectAuthenticationOptions
@@ -136,48 +217,6 @@ namespace Masticore.ActiveDirectory
         }
 
         /// <summary>
-        /// Configures the strategy for AntiForgeryConfig - By default this is the OID claim for the user
-        /// </summary>
-        protected virtual void ConfigureAntiForgeryValidation()
-        {
-            AntiForgeryConfig.UniqueClaimTypeIdentifier = "http://schemas.microsoft.com/identity/claims/objectidentifier";
-        }
-
-        /// <summary>
-        /// Runs the Profile action, taking the current user to the page for their profile in AD B2C
-        /// </summary>
-        /// <param name="controller"></param>
-        /// <param name="redirectUri"></param>
-        public virtual void Profile(Controller controller, string redirectUri)
-        {
-            controller.HttpContext.GetOwinContext().Authentication.Challenge(
-                    new AuthenticationProperties() { RedirectUri = redirectUri }, ProfilePolicyId);
-        }
-
-        #region IActiveDirectoryStrategy Implementation
-
-        /// <summary>
-        /// Configures the current application to run the B2C connections
-        /// </summary>
-        /// <param name="app"></param>
-        public virtual void Configure(IAppBuilder app)
-        {
-            ConfigureAntiForgeryValidation();
-
-            app.SetDefaultSignInAsAuthenticationType(CookieAuthenticationDefaults.AuthenticationType);
-
-            // TODO: Find a better workaround for infinite loop redirect issue
-            // This is theoretically safe as long as we are forcing HTTPS redirect
-            // (RequireSecureConnection Attribute + HTTPS URL Rewrite)
-            // MSDN warning for "Always" setting: https://msdn.microsoft.com/en-us/library/microsoft.owin.security.cookies.cookiesecureoption(v=vs.113).aspx
-            // HTTPS rewrite in web.config example, use this in the production app: https://gist.github.com/eralston/e487ef97edcad4881401
-            // Issues on Stack Overflow: https://stackoverflow.com/questions/27525573/azure-openid-connect-via-owin-middleware-resulting-in-infinite-redirect-loop
-            app.UseCookieAuthentication(new CookieAuthenticationOptions() { CookieSecure = CookieSecureOption.Always, CookieManager = new SystemWebCookieManager() });
-
-            ConfiguratePolicies(app);
-        }
-
-        /// <summary>
         /// Attempts to setup the given policy in the app
         /// This will abort if the policyId is null or empty
         /// </summary>
@@ -188,60 +227,8 @@ namespace Masticore.ActiveDirectory
             if (string.IsNullOrEmpty(policyId))
                 return;
 
+            //Use the patched version of the OpenIdConnect (clear excessive nonce policies)
             app.UseOpenIdConnectAuthenticationPatched(CreateOptionsFromPolicy(policyId));
         }
-
-        /// <summary>
-        /// Configures available policies in the system
-        /// </summary>
-        /// <param name="app"></param>
-        protected virtual void ConfiguratePolicies(IAppBuilder app)
-        {
-            UsePolicy(app, SignUpPolicyId);
-            UsePolicy(app, ProfilePolicyId);
-            // The last registered policy becomes the default policy
-            UsePolicy(app, SignInPolicyId);
-        }
-
-        /// <summary>
-        /// Signs in the current user
-        /// </summary>
-        /// <param name="controller"></param>
-        /// <param name="redirectUri"></param>
-        public virtual void SignIn(Controller controller, string redirectUri)
-        {
-            // To execute a policy, you simply need to trigger an OWIN challenge.
-            // You can indicate which policy to use by specifying the policy id as the AuthenticationType
-            controller.HttpContext.GetOwinContext().Authentication.Challenge(
-                new AuthenticationProperties() { RedirectUri = redirectUri }, SignInPolicyId);
-        }
-
-        /// <summary>
-        /// Signs up the current user, creating a new account
-        /// NOTE: You must implement your own user models and permissions, this is just authentication
-        /// </summary>
-        /// <param name="controller"></param>
-        /// <param name="redirectUri"></param>
-        public virtual void SignUp(Controller controller, string redirectUri)
-        {
-            // To execute a policy, you simply need to trigger an OWIN challenge.
-            // You can indicate which policy to use by specifying the policy id as the AuthenticationType
-            controller.HttpContext.GetOwinContext().Authentication.Challenge(
-                new AuthenticationProperties() { RedirectUri = redirectUri }, SignUpPolicyId);
-        }
-
-        /// <summary>
-        /// Logs the current user out of the system
-        /// </summary>
-        /// <param name="controller"></param>
-        /// <param name="redirectUri"></param>
-        public virtual void SignOut(Controller controller, string redirectUri)
-        {
-            IEnumerable<AuthenticationDescription> authTypes = controller.HttpContext.GetOwinContext().Authentication.GetAuthenticationTypes();
-            controller.HttpContext.GetOwinContext().Authentication.SignOut(new AuthenticationProperties() { RedirectUri = redirectUri }, authTypes.Select(t => t.AuthenticationType).ToArray());
-            controller.Request.GetOwinContext().Authentication.GetAuthenticationTypes();
-        }
-
-        #endregion
     }
 }

@@ -1,4 +1,6 @@
-﻿using Microsoft.Owin.Security;
+﻿using Microsoft.IdentityModel.Clients.ActiveDirectory;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.Owin.Security;
 using Microsoft.Owin.Security.Cookies;
 using Microsoft.Owin.Security.OpenIdConnect;
 using Owin;
@@ -13,22 +15,19 @@ namespace Masticore.ActiveDirectory
     /// Implements IActiveDirectoryIntegration over Organization/School Active Directory style
     /// Reads ClientId and AADInstance from ActiveDirectoryAppSettings
     /// </summary>
-    public class OrgStrategy : IActiveDirectoryStrategy
+    public class OrgStrategy : IAuthStrategy
     {
-        #region App Settings
+        public string ClientId { get; set; } = ActiveDirectoryAppSettings.ClientId;
+        public string ClientSecret { get; set; } = ActiveDirectoryAppSettings.ClientSecret;
 
-        /// <summary>
-        /// GUID for the application ID
-        /// This is set in the AD portal
-        /// </summary>
-        public static readonly string ClientId = ActiveDirectoryAppSettings.ClientId;
-
-        /// <summary>
-        /// URL for the signin server, EG: https://login.microsoftonline.com/
-        /// </summary>
         public static readonly string AADInstance = ActiveDirectoryAppSettings.AADInstance + "common";
 
-        #endregion
+        public string RedirectUrl { get; set; }
+        public string PostLogoutUrl { get; set; }
+        public string SignInPolicyId { get; set; } = null;
+        public string SignUpPolicyId { get; set; } = null;
+        public string ProfilePolicyId { get; set; } = null;
+        public string Domain { get; set; } = null;
 
         /// <summary>
         /// Configures anti-forgery validatation to use the OID of the current user
@@ -36,9 +35,8 @@ namespace Masticore.ActiveDirectory
         protected virtual void ConfigureAntiForgeryValidation()
         {
             AntiForgeryConfig.UniqueClaimTypeIdentifier = "http://schemas.microsoft.com/identity/claims/objectidentifier";
+            AntiForgeryConfig.AdditionalDataProvider = new ActiveDirectoryAntiForgeryProvider();
         }
-
-        #region IActiveDirectoryStrategy Implementation
 
         /// <summary>
         /// Configures the app to use the Org-style AD integration
@@ -50,38 +48,69 @@ namespace Masticore.ActiveDirectory
 
             app.SetDefaultSignInAsAuthenticationType(CookieAuthenticationDefaults.AuthenticationType);
 
-            app.UseCookieAuthentication(new CookieAuthenticationOptions { });
+            app.UseCookieAuthentication(new CookieAuthenticationOptions() { CookieSecure = CookieSecureOption.Always, CookieManager = new SameSiteCookieManager() });
 
-            app.UseOpenIdConnectAuthenticationPatched(
-                new OpenIdConnectAuthenticationOptions
+            app.UseOpenIdConnectAuthenticationPatched(SetOptions());
+
+            app.Use((context, next) =>
+            {
+                context.SetAuthenticationType(AuthenticationType.ActiveDirectory);
+                return next();
+            });
+        }
+
+        private OpenIdConnectAuthenticationOptions SetOptions()
+        {
+            var opts = new OpenIdConnectAuthenticationOptions
+            {
+                ClientId = ClientId,
+                ClientSecret = ClientSecret,
+                Authority = AADInstance,
+                TokenValidationParameters = new TokenValidationParameters
                 {
-                    ClientId = ClientId,
-                    Authority = AADInstance,
-                    TokenValidationParameters = new System.IdentityModel.Tokens.TokenValidationParameters
+                    // instead of using the default validation (validating against a single issuer value, as we do in line of business apps), 
+                    // we inject our own multitenant validation logic
+                    ValidateIssuer = false,
+                    // If the app needs access to the entire organization, then add the logic
+                    // of validating the Issuer here.
+                    // IssuerValidator
+                },
+                Notifications = new OpenIdConnectAuthenticationNotifications()
+                {
+                    SecurityTokenValidated = (context) =>
                     {
-                        // instead of using the default validation (validating against a single issuer value, as we do in line of business apps), 
-                        // we inject our own multitenant validation logic
-                        ValidateIssuer = false,
-                        // If the app needs access to the entire organization, then add the logic
-                        // of validating the Issuer here.
-                        // IssuerValidator
+                        // If your authentication logic is based on users then add your logic here
+                        return Task.FromResult(0);
                     },
-                    Notifications = new OpenIdConnectAuthenticationNotifications()
+                    AuthenticationFailed = (context) =>
                     {
-                        SecurityTokenValidated = (context) =>
+                        // Pass in the context back to the app
+                        context.OwinContext.Response.Redirect("/Home/Error");
+                        context.HandleResponse(); // Suppress the exception
+                        return Task.FromResult(0);
+                    },
+                    RedirectToIdentityProvider = (context) =>
+                    {
+                        context.ProtocolMessage.Parameters.Add("msaFed", "0");
+                        if (!string.IsNullOrEmpty(PostLogoutUrl))
                         {
-                            // If your authentication logic is based on users then add your logic here
-                            return Task.FromResult(0);
-                        },
-                        AuthenticationFailed = (context) =>
-                        {
-                            // Pass in the context back to the app
-                            context.OwinContext.Response.Redirect("/Home/Error");
-                            context.HandleResponse(); // Suppress the exception
-                            return Task.FromResult(0);
+                            context.ProtocolMessage.PostLogoutRedirectUri = PostLogoutUrl;
                         }
-                    }
-                });
+                        return Task.FromResult(0);
+                    },
+                }
+            };
+
+            if (!string.IsNullOrEmpty(RedirectUrl))
+            {
+                opts.RedirectUri = RedirectUrl;
+            }
+
+            //if (!string.IsNullOrEmpty(PostLogoutUrl))
+            //{
+            //    opts.PostLogoutRedirectUri = PostLogoutUrl;
+            //}
+            return opts;
         }
 
         /// <summary>
@@ -121,6 +150,18 @@ namespace Masticore.ActiveDirectory
                 OpenIdConnectAuthenticationDefaults.AuthenticationType, CookieAuthenticationDefaults.AuthenticationType);
         }
 
-        #endregion
+        public async Task<string> GetAuthenticationTokenAsync()
+        {
+
+            var resource = "https://graph.microsoft.com/";
+
+            var authority = AADInstance;
+            var authContext = new AuthenticationContext(authority);
+            var credentials = new ClientCredential(ClientId, ClientSecret);
+            var authResult = await authContext.AcquireTokenAsync(resource, credentials);
+
+            return authResult.AccessToken;
+
+        }
     }
 }
